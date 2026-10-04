@@ -9,6 +9,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+	adminHandlers "github.com/ju4nd3r/sistema-venta-boletos-buses/internal/admin/handlers"
+	adminRepos "github.com/ju4nd3r/sistema-venta-boletos-buses/internal/admin/repositories"
+	adminServices "github.com/ju4nd3r/sistema-venta-boletos-buses/internal/admin/services"
 	"github.com/ju4nd3r/sistema-venta-boletos-buses/internal/platform/config"
 	"github.com/ju4nd3r/sistema-venta-boletos-buses/internal/platform/database"
 )
@@ -88,7 +91,17 @@ func main() {
 		})
 	})
 
-	// 5. Serve Frontend static assets if available
+	// 5. Initialize Modules
+	if pool != nil {
+		adminRepo := adminRepos.NewPostgresAdminRepository(pool)
+		adminService := adminServices.NewAdminService(adminRepo)
+		adminHandler := adminHandlers.NewAdminHandler(adminService)
+
+		api := router.Group("/api")
+		adminHandler.RegisterRoutes(api)
+	}
+
+	// 6. Serve Frontend static assets if available
 	if _, err := os.Stat("web"); err == nil {
 		router.Static("/static", "./web")
 		router.StaticFile("/", "./web/index.html")

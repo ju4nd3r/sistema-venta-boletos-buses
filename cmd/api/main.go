@@ -14,6 +14,9 @@ import (
 	adminServices "github.com/ju4nd3r/sistema-venta-boletos-buses/internal/admin/services"
 	"github.com/ju4nd3r/sistema-venta-boletos-buses/internal/platform/config"
 	"github.com/ju4nd3r/sistema-venta-boletos-buses/internal/platform/database"
+	ticketHandlers "github.com/ju4nd3r/sistema-venta-boletos-buses/internal/tickets/handlers"
+	ticketRepos "github.com/ju4nd3r/sistema-venta-boletos-buses/internal/tickets/repositories"
+	ticketServices "github.com/ju4nd3r/sistema-venta-boletos-buses/internal/tickets/services"
 )
 
 func main() {
@@ -93,12 +96,19 @@ func main() {
 
 	// 5. Initialize Modules
 	if pool != nil {
+		// Admin module
 		adminRepo := adminRepos.NewPostgresAdminRepository(pool)
 		adminService := adminServices.NewAdminService(adminRepo)
 		adminHandler := adminHandlers.NewAdminHandler(adminService)
 
+		// Ticketing & Booking module
+		ticketRepo := ticketRepos.NewPostgresTicketRepository(pool)
+		ticketService := ticketServices.NewTicketService(ticketRepo)
+		ticketHandler := ticketHandlers.NewTicketHandler(ticketService)
+
 		api := router.Group("/api")
 		adminHandler.RegisterRoutes(api)
+		ticketHandler.RegisterRoutes(api)
 	}
 
 	// 6. Serve Frontend static assets if available

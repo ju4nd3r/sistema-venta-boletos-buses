@@ -1,12 +1,383 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bus Booking System</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BusTicket Pro - Booking & Fleet Management</title>
+  <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <h1>Bus Ticket Booking & Admin System</h1>
-    <p>API is running.</p>
+  <!-- Global Navigation Header -->
+  <header>
+    <div class="navbar">
+      <a href="#" class="brand" onclick="switchTab('client')">
+        <span class="brand-icon">🚌</span>
+        <span>BusTicket Pro</span>
+      </a>
+      <div class="nav-links">
+        <button id="nav-client" class="nav-btn active" onclick="switchTab('client')">
+          <span>🎟️</span> Buy Tickets
+        </button>
+        <button id="nav-admin" class="nav-btn" onclick="switchTab('admin')">
+          <span>⚙️</span> Admin Portal
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="container">
+    
+    <!-- ==========================================
+         CLIENT PORTAL TAB
+    =========================================== -->
+    <div id="tab-client" class="tab-pane active">
+      <!-- Search Trips Card -->
+      <section class="card">
+        <h2 class="card-title">🔍 Search Scheduled Bus Trips</h2>
+        <form id="search-trips-form" onsubmit="handleSearchTrips(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="search-origin">Origin City</label>
+              <select id="search-origin" class="form-control" required>
+                <option value="">Select Origin...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="search-destination">Destination City</label>
+              <select id="search-destination" class="form-control" required>
+                <option value="">Select Destination...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="search-date">Date (Optional)</label>
+              <input type="date" id="search-date" class="form-control">
+            </div>
+            <div class="form-group">
+              <button type="submit" class="btn btn-primary" style="width: 100%;">Search Trips</button>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <!-- Search Results Container -->
+      <section id="search-results-section" style="display: none; margin-bottom: 2rem;">
+        <h3 style="margin-bottom: 1rem; font-size: 1.15rem;">Available Trips</h3>
+        <div id="trips-results-grid" class="trips-grid"></div>
+      </section>
+
+      <!-- Interactive Bus Seat Selection & Booking Section -->
+      <section id="seat-booking-section" style="display: none;">
+        <div class="card">
+          <h2 class="card-title">💺 Interactive Bus Seat Selection</h2>
+          
+          <div class="booking-section">
+            <!-- Bus Chassis and Seat Grid -->
+            <div class="bus-container">
+              <div class="bus-chassis">
+                <div class="bus-front-cabin">
+                  <span>Front of Bus</span>
+                  <span class="steering-wheel" title="Driver Cabin">🛞</span>
+                </div>
+                
+                <!-- Dynamic Seat Grid with Central Aisle -->
+                <div id="bus-seat-grid" class="bus-seats-grid"></div>
+              </div>
+
+              <!-- Color Legend -->
+              <div class="seats-legend">
+                <div class="legend-item">
+                  <div class="legend-color available"></div>
+                  <span>Available (Green)</span>
+                </div>
+                <div class="legend-item">
+                  <div class="legend-color occupied"></div>
+                  <span>Occupied (Red)</span>
+                </div>
+                <div class="legend-item">
+                  <div class="legend-color selected"></div>
+                  <span>Selected (Blue)</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Checkout / Passenger Booking Panel -->
+            <div class="checkout-card">
+              <h3 style="font-size: 1.1rem; margin-bottom: 1rem;">Ticket Checkout</h3>
+              
+              <div class="checkout-summary">
+                <div class="summary-row">
+                  <span style="color: var(--text-muted);">Route:</span>
+                  <strong id="summary-route">-</strong>
+                </div>
+                <div class="summary-row">
+                  <span style="color: var(--text-muted);">Departure:</span>
+                  <span id="summary-departure">-</span>
+                </div>
+                <div class="summary-row">
+                  <span style="color: var(--text-muted);">Bus:</span>
+                  <span id="summary-bus">-</span>
+                </div>
+                <div class="summary-row">
+                  <span style="color: var(--text-muted);">Seat Selected:</span>
+                  <strong id="summary-seat" style="color: var(--primary);">None selected</strong>
+                </div>
+                <div class="summary-row total">
+                  <span>Price:</span>
+                  <span id="summary-price">$0</span>
+                </div>
+              </div>
+
+              <form id="booking-form" onsubmit="handleConfirmBooking(event)">
+                <input type="hidden" id="booking-trip-id">
+                <input type="hidden" id="booking-seat-id">
+
+                <div class="form-group" style="margin-bottom: 0.85rem;">
+                  <label for="passenger-name">Passenger Full Name</label>
+                  <input type="text" id="passenger-name" class="form-control" placeholder="e.g. Maria Gonzalez" required>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 0.85rem;">
+                  <label for="passenger-doc">Document / ID Number</label>
+                  <input type="text" id="passenger-doc" class="form-control" placeholder="e.g. 1020304050" required>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 1.25rem;">
+                  <label for="payment-status">Payment Status</label>
+                  <select id="payment-status" class="form-control">
+                    <option value="PAGADO" selected>PAGADO (Confirmed Paid)</option>
+                    <option value="RESERVADO">RESERVADO (Reservation)</option>
+                  </select>
+                </div>
+
+                <button type="submit" id="btn-book-ticket" class="btn btn-primary" style="width: 100%;" disabled>
+                  Confirm & Reserve Seat
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Booking Confirmation Receipt Card -->
+      <section id="booking-confirmation-section" style="display: none;">
+        <div class="card" style="border-left: 5px solid var(--seat-available); background: #f0fdf4;">
+          <h2 class="card-title" style="color: #15803d; border-color: #bbf7d0;">
+            ✅ Ticket Booked Successfully!
+          </h2>
+          <div id="booking-receipt-details" style="line-height: 1.8;"></div>
+          <button class="btn btn-primary" style="margin-top: 1rem;" onclick="resetBookingView()">
+            Book Another Ticket
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <!-- ==========================================
+         ADMIN MANAGEMENT PORTAL TAB
+    =========================================== -->
+    <div id="tab-admin" class="tab-pane">
+      
+      <!-- Section 1: Cities -->
+      <section class="card">
+        <h2 class="card-title">🏙️ Cities & Terminals Management</h2>
+        <form id="create-city-form" onsubmit="handleCreateCity(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="city-name">City Name</label>
+              <input type="text" id="city-name" class="form-control" placeholder="e.g. Cali" required>
+            </div>
+            <div class="form-group">
+              <label for="city-terminal">Bus Terminal Name</label>
+              <input type="text" id="city-terminal" class="form-control" placeholder="e.g. Terminal de Transporte Cali" required>
+            </div>
+            <div class="form-group">
+              <button type="submit" class="btn btn-primary">Add City</button>
+            </div>
+          </div>
+        </form>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>City Name</th>
+                <th>Terminal</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="cities-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Section 2: Bus Types & Fleet -->
+      <section class="card">
+        <h2 class="card-title">🚌 Bus Types & Fleet Management (Auto-generated Seats)</h2>
+        
+        <!-- Bus Type Form -->
+        <form id="create-bustype-form" onsubmit="handleCreateBusType(event)" style="margin-bottom: 1.5rem;">
+          <h4 style="margin-bottom: 0.5rem; color: var(--secondary);">1. Register Bus Type</h4>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="bustype-name">Category Name</label>
+              <input type="text" id="bustype-name" class="form-control" placeholder="e.g. VIP Double-Decker" required>
+            </div>
+            <div class="form-group">
+              <label for="bustype-capacity">Seat Capacity (Grid Generated)</label>
+              <input type="number" id="bustype-capacity" class="form-control" min="4" max="80" value="16" required>
+            </div>
+            <div class="form-group">
+              <button type="submit" class="btn btn-primary">Create Bus Type</button>
+            </div>
+          </div>
+        </form>
+
+        <!-- Bus Vehicle Form -->
+        <form id="create-bus-form" onsubmit="handleCreateBus(event)" style="margin-bottom: 1.5rem;">
+          <h4 style="margin-bottom: 0.5rem; color: var(--secondary);">2. Register New Bus (Automatically builds seat grid)</h4>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="bus-plate">License Plate</label>
+              <input type="text" id="bus-plate" class="form-control" placeholder="e.g. TST-999" required>
+            </div>
+            <div class="form-group">
+              <label for="bus-type-select">Bus Type Category</label>
+              <select id="bus-type-select" class="form-control" required>
+                <option value="">Select Category...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="bus-internal-num">Internal Vehicle Number</label>
+              <input type="text" id="bus-internal-num" class="form-control" placeholder="e.g. 505" required>
+            </div>
+            <div class="form-group">
+              <button type="submit" class="btn btn-primary">Add Bus & Auto-Generate Seats</button>
+            </div>
+          </div>
+        </form>
+
+        <h4 style="margin-bottom: 0.5rem; color: var(--secondary);">Fleet Inventory</h4>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Plate</th>
+                <th>Category</th>
+                <th>Internal #</th>
+                <th>Total Seats</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="buses-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Section 3: Routes -->
+      <section class="card">
+        <h2 class="card-title">🛣️ Intermunicipal Routes</h2>
+        <form id="create-route-form" onsubmit="handleCreateRoute(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="route-origin">Origin City</label>
+              <select id="route-origin" class="form-control" required>
+                <option value="">Select Origin...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="route-destination">Destination City</label>
+              <select id="route-destination" class="form-control" required>
+                <option value="">Select Destination...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="route-distance">Distance (km)</label>
+              <input type="number" step="0.1" id="route-distance" class="form-control" placeholder="e.g. 350" required>
+            </div>
+            <div class="form-group">
+              <label for="route-duration">Est. Duration (minutes)</label>
+              <input type="number" id="route-duration" class="form-control" placeholder="e.g. 360" required>
+            </div>
+            <div class="form-group">
+              <button type="submit" class="btn btn-primary">Add Route</button>
+            </div>
+          </div>
+        </form>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Origin</th>
+                <th>Destination</th>
+                <th>Distance</th>
+                <th>Duration</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="routes-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Section 4: Scheduled Trips -->
+      <section class="card">
+        <h2 class="card-title">🗓️ Trip Scheduler</h2>
+        <form id="create-trip-form" onsubmit="handleCreateTrip(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="trip-route-select">Route</label>
+              <select id="trip-route-select" class="form-control" required>
+                <option value="">Select Route...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="trip-bus-select">Assigned Bus</label>
+              <select id="trip-bus-select" class="form-control" required>
+                <option value="">Select Bus...</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="trip-departure-time">Departure Date & Time</label>
+              <input type="datetime-local" id="trip-departure-time" class="form-control" required>
+            </div>
+            <div class="form-group">
+              <label for="trip-price">Ticket Price ($ COP)</label>
+              <input type="number" id="trip-price" class="form-control" placeholder="e.g. 75000" min="0" required>
+            </div>
+            <div class="form-group">
+              <button type="submit" class="btn btn-primary">Schedule Trip</button>
+            </div>
+          </div>
+        </form>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Route</th>
+                <th>Bus Plate</th>
+                <th>Departure Time</th>
+                <th>Price</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="trips-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- Client Application Script -->
+  <script src="/static/js/app.js"></script>
 </body>
 </html>

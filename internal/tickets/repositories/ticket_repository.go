@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -23,6 +24,7 @@ type TicketRepository interface {
 	GetTripByID(ctx context.Context, tripID int) (*models.Trip, error)
 	GetSeatMapByTripID(ctx context.Context, tripID int) ([]models.SeatMapStatus, error)
 	BookSeatWithLock(ctx context.Context, req *models.BookingRequest) (*models.Ticket, error)
+	BookMultipleSeatsWithLock(ctx context.Context, req *models.MultiBookingRequest) (*models.MultiBookingResponse, error)
 	GetTicketByID(ctx context.Context, ticketID int) (*models.Ticket, error)
 	GetTicketsByTripID(ctx context.Context, tripID int) ([]models.Ticket, error)
 }
@@ -258,6 +260,152 @@ func (r *postgresTicketRepository) BookSeatWithLock(ctx context.Context, req *mo
 
 	return ticket, nil
 }
+
+// BookMultipleSeatsWithLock executes pessimistic locking using SELECT ... FOR UPDATE in sorted order
+// ensuring atomicity and deadlock prevention when reserving or purchasing multiple seats concurrently.
+func (r *postgresTicketRepository) BookMultipleSeatsWithLock(ctx context.Context, req *models.MultiBookingRequest) (*models.MultiBookingResponse, error) {
+	if len(req.Passengers) == 0 {
+		return nil, errors.New("at least one passenger seat must be selected")
+	}
+
+	// Step 1: Collect and sort seat IDs in ascending order to prevent deadlocks across concurrent transactions
+	seatIDs := make([]int, len(req.Passengers))
+	seatMap := make(map[int]models.PassengerItem)
+	for i, p := range req.Passengers {
+		if _, exists := seatMap[p.SeatID]; exists {
+			return nil, fmt.Errorf("duplicate seat ID %d in request", p.SeatID)
+		}
+		seatIDs[i] = p.SeatID
+		seatMap[p.SeatID] = p
+	}
+	sort.Ints(seatIDs)
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed beginning multi-booking transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Step 2: Verify trip exists and retrieve bus ID and price
+	var busID int
+	var basePrice float64
+	queryTrip := `SELECT bus_id, precio_boleto FROM viajes WHERE id = $1`
+	err = tx.QueryRow(ctx, queryTrip, req.TripID).Scan(&busID, &basePrice)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrTripNotFound
+		}
+		return nil, fmt.Errorf("failed verifying trip: %w", err)
+	}
+
+	// Step 3: Pessimistically lock all requested seats in ascending order
+	queryLockSeats := `
+		SELECT id, numero_silla, fila, columna 
+		FROM sillas 
+		WHERE id = ANY($1) AND bus_id = $2 
+		ORDER BY id ASC 
+		FOR UPDATE`
+	seatRows, err := tx.Query(ctx, queryLockSeats, seatIDs, busID)
+	if err != nil {
+		return nil, fmt.Errorf("failed locking seats: %w", err)
+	}
+	defer seatRows.Close()
+
+	lockedSeats := make(map[int]models.Seat)
+	for seatRows.Next() {
+		var s models.Seat
+		if err := seatRows.Scan(&s.ID, &s.SeatNumber, &s.Row, &s.Column); err != nil {
+			return nil, fmt.Errorf("failed scanning locked seat: %w", err)
+		}
+		s.BusID = busID
+		lockedSeats[s.ID] = s
+	}
+	if err := seatRows.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(lockedSeats) != len(seatIDs) {
+		return nil, ErrSeatNotFound
+	}
+
+	// Step 4: Check if ANY of the requested seats is already occupied
+	queryCheckOccupied := `
+		SELECT s.numero_silla 
+		FROM boletos b
+		JOIN sillas s ON b.silla_id = s.id
+		WHERE b.viaje_id = $1 AND b.silla_id = ANY($2) AND b.estado IN ('RESERVADO', 'PAGADO')
+		FOR UPDATE`
+	occRows, err := tx.Query(ctx, queryCheckOccupied, req.TripID, seatIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed checking occupied seats: %w", err)
+	}
+	defer occRows.Close()
+
+	var occupiedSeatNumbers []string
+	for occRows.Next() {
+		var seatNum int
+		if err := occRows.Scan(&seatNum); err != nil {
+			return nil, err
+		}
+		occupiedSeatNumbers = append(occupiedSeatNumbers, fmt.Sprintf("#%d", seatNum))
+	}
+	if len(occupiedSeatNumbers) > 0 {
+		return nil, fmt.Errorf("%w: seat(s) %s", ErrSeatAlreadyOccupied, strings.Join(occupiedSeatNumbers, ", "))
+	}
+
+	// Step 5: Insert all tickets
+	insertTicketQuery := `
+		INSERT INTO boletos (viaje_id, silla_id, nombre_pasajero, documento, estado)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, creado_en`
+
+	tickets := make([]models.Ticket, 0, len(req.Passengers))
+	var totalAmount float64
+
+	for _, p := range req.Passengers {
+		var ticket models.Ticket
+		ticket.TripID = req.TripID
+		ticket.SeatID = p.SeatID
+		ticket.PassengerName = p.PassengerName
+		ticket.DocumentID = p.DocumentID
+		ticket.Status = req.Status
+
+		err := tx.QueryRow(ctx, insertTicketQuery,
+			ticket.TripID,
+			ticket.SeatID,
+			ticket.PassengerName,
+			ticket.DocumentID,
+			ticket.Status,
+		).Scan(&ticket.ID, &ticket.CreatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed inserting ticket for seat %d: %w", p.SeatID, err)
+		}
+
+		s := lockedSeats[p.SeatID]
+		ticket.Seat = &s
+		tickets = append(tickets, ticket)
+
+		// Calculate pricing: 15% discount for child if specified, else base price
+		if strings.ToUpper(p.PassengerType) == "CHILD" {
+			totalAmount += basePrice * 0.85
+		} else {
+			totalAmount += basePrice
+		}
+	}
+
+	// Step 6: Commit transaction
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("failed committing multi-booking transaction: %w", err)
+	}
+
+	return &models.MultiBookingResponse{
+		TripID:         req.TripID,
+		Tickets:        tickets,
+		TotalAmount:    totalAmount,
+		PassengerCount: len(tickets),
+	}, nil
+}
+
 
 // GetTicketByID fetches ticket details including related trip and seat
 func (r *postgresTicketRepository) GetTicketByID(ctx context.Context, ticketID int) (*models.Ticket, error) {

@@ -19,9 +19,10 @@ type MockTicketService struct {
 	SearchTripsFunc      func(ctx context.Context, originCityID, destCityID int, date string) ([]models.Trip, error)
 	GetTripByIDFunc      func(ctx context.Context, tripID int) (*models.Trip, error)
 	GetSeatMapFunc       func(ctx context.Context, tripID int) ([]models.SeatMapStatus, error)
-	BookSeatFunc         func(ctx context.Context, req *models.BookingRequest) (*models.Ticket, error)
-	GetTicketByIDFunc    func(ctx context.Context, ticketID int) (*models.Ticket, error)
-	GetTicketsByTripFunc func(ctx context.Context, tripID int) ([]models.Ticket, error)
+	BookSeatFunc              func(ctx context.Context, req *models.BookingRequest) (*models.Ticket, error)
+	BookMultipleSeatsFunc     func(ctx context.Context, req *models.MultiBookingRequest) (*models.MultiBookingResponse, error)
+	GetTicketByIDFunc         func(ctx context.Context, ticketID int) (*models.Ticket, error)
+	GetTicketsByTripFunc      func(ctx context.Context, tripID int) ([]models.Ticket, error)
 }
 
 func (m *MockTicketService) SearchTrips(ctx context.Context, originCityID, destCityID int, date string) ([]models.Trip, error) {
@@ -47,6 +48,16 @@ func (m *MockTicketService) BookSeat(ctx context.Context, req *models.BookingReq
 		return m.BookSeatFunc(ctx, req)
 	}
 	return &models.Ticket{ID: 1, TripID: req.TripID, SeatID: req.SeatID}, nil
+}
+func (m *MockTicketService) BookMultipleSeats(ctx context.Context, req *models.MultiBookingRequest) (*models.MultiBookingResponse, error) {
+	if m.BookMultipleSeatsFunc != nil {
+		return m.BookMultipleSeatsFunc(ctx, req)
+	}
+	return &models.MultiBookingResponse{
+		TripID:         req.TripID,
+		PassengerCount: len(req.Passengers),
+		TotalAmount:    float64(len(req.Passengers)) * 85000,
+	}, nil
 }
 func (m *MockTicketService) GetTicketByID(ctx context.Context, ticketID int) (*models.Ticket, error) {
 	if m.GetTicketByIDFunc != nil {
@@ -152,5 +163,70 @@ func TestHandler_GetSeatMap_Success(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected HTTP 200 OK, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandler_BookMultipleSeats_Success(t *testing.T) {
+	mockService := &MockTicketService{
+		BookMultipleSeatsFunc: func(ctx context.Context, req *models.MultiBookingRequest) (*models.MultiBookingResponse, error) {
+			return &models.MultiBookingResponse{
+				TripID:         req.TripID,
+				PassengerCount: len(req.Passengers),
+				TotalAmount:    170000,
+				Tickets: []models.Ticket{
+					{ID: 10, TripID: req.TripID, SeatID: req.Passengers[0].SeatID, PassengerName: req.Passengers[0].PassengerName},
+					{ID: 11, TripID: req.TripID, SeatID: req.Passengers[1].SeatID, PassengerName: req.Passengers[1].PassengerName},
+				},
+			}, nil
+		},
+	}
+
+	handler := ticketHandlers.NewTicketHandler(mockService)
+	router := setupTestRouter(handler)
+
+	reqBody := models.MultiBookingRequest{
+		TripID: 1,
+		Passengers: []models.PassengerItem{
+			{SeatID: 5, PassengerName: "Carlos Gómez", DocumentID: "CC12345", PassengerType: "ADULT"},
+			{SeatID: 6, PassengerName: "Sofía Gómez", DocumentID: "TI67890", PassengerType: "CHILD"},
+		},
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/api/tickets/book-multiple", bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected HTTP 201 Created, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandler_BookMultipleSeats_Conflict(t *testing.T) {
+	mockService := &MockTicketService{
+		BookMultipleSeatsFunc: func(ctx context.Context, req *models.MultiBookingRequest) (*models.MultiBookingResponse, error) {
+			return nil, repositories.ErrSeatAlreadyOccupied
+		},
+	}
+
+	handler := ticketHandlers.NewTicketHandler(mockService)
+	router := setupTestRouter(handler)
+
+	reqBody := models.MultiBookingRequest{
+		TripID: 1,
+		Passengers: []models.PassengerItem{
+			{SeatID: 5, PassengerName: "Carlos Gómez", DocumentID: "CC12345", PassengerType: "ADULT"},
+		},
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/api/tickets/book-multiple", bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected HTTP 409 Conflict, got %d: %s", w.Code, w.Body.String())
 	}
 }

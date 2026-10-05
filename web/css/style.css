@@ -23,6 +23,21 @@
   --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+[data-theme="dark"] {
+  --primary: #3b82f6;
+  --primary-hover: #60a5fa;
+  --primary-light: #1e293b;
+  --secondary: #94a3b8;
+  --bg-main: #0b1120;
+  --bg-card: #1e293b;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --border: #334155;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+  --shadow-lg: 0 10px 25px rgba(0,0,0,0.7);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -163,7 +178,7 @@ header {
   border-radius: var(--radius-sm);
   font-size: 0.95rem;
   transition: var(--transition);
-  background: #ffffff;
+  background: var(--bg-card);
   color: var(--text-main);
 }
 
@@ -452,7 +467,7 @@ header {
 
 /* Checkout Panel */
 .checkout-card {
-  background: #ffffff;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 1.5rem;
@@ -462,7 +477,7 @@ header {
 }
 
 .checkout-summary {
-  background: #f8fafc;
+  background: var(--primary-light);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 1rem;
@@ -499,7 +514,7 @@ header {
 }
 
 .data-table th {
-  background: #f8fafc;
+  background: var(--primary-light);
   padding: 0.75rem 1rem;
   border-bottom: 2px solid var(--border);
   color: var(--secondary);
@@ -512,7 +527,7 @@ header {
 }
 
 .data-table tr:hover {
-  background: #f1f5f9;
+  background: var(--primary-light);
 }
 
 .badge {
@@ -579,4 +594,234 @@ header {
     transform: translateX(0);
     opacity: 1;
   }
+}
+
+/* ========================================================
+   THEME TOGGLE BUTTON & DARK MODE ENHANCEMENTS
+======================================================== */
+.theme-toggle-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  transition: var(--transition);
+}
+
+.theme-toggle-btn:hover {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+[data-theme="dark"] .bus-container {
+  background: #0f172a;
+  border-color: #334155;
+}
+
+[data-theme="dark"] .bus-chassis {
+  background: #1e293b;
+  border-color: #475569;
+}
+
+[data-theme="dark"] .trip-meta {
+  background: #0f172a;
+  color: #cbd5e1;
+}
+
+[data-theme="dark"] .seats-legend {
+  background: #0f172a;
+  border-color: #334155;
+}
+
+[data-theme="dark"] .badge-info {
+  background: #0369a1;
+  color: #e0f2fe;
+}
+
+[data-theme="dark"] .badge-success {
+  background: #065f46;
+  color: #d1fae5;
+}
+
+/* Multi-Booking Status Banner */
+.selection-status-banner {
+  background: var(--primary-light);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.seat-badge-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: var(--primary);
+  color: #ffffff;
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin: 0.15rem;
+}
+
+/* Dynamic Passenger Form Cards */
+.passenger-card {
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem;
+  margin-bottom: 0.85rem;
+}
+
+.passenger-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.6rem;
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--secondary);
+}
+
+.passenger-type-badge {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+
+.passenger-type-badge.adult {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.passenger-type-badge.child {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+/* ========================================================
+   ADMIN INTERACTIVE BUS BUILDER
+======================================================== */
+.builder-mode-switcher {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.builder-mode-btn {
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--secondary);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.builder-mode-btn.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+.admin-builder-container {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .admin-builder-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+.builder-grid-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--primary-light);
+  padding: 1.5rem;
+  border-radius: var(--radius-lg);
+  border: 2px dashed var(--border);
+}
+
+.builder-bus-chassis {
+  background: var(--bg-card);
+  border: 3px solid #64748b;
+  border-radius: 36px 36px 14px 14px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: var(--shadow-md);
+  width: 100%;
+  max-width: 440px;
+}
+
+.builder-slots-grid {
+  display: grid;
+  gap: 0.5rem;
+  justify-content: center;
+  margin: 1rem 0;
+}
+
+.builder-slot {
+  width: 48px;
+  height: 50px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: var(--transition);
+  user-select: none;
+}
+
+.builder-slot.active-seat {
+  background: var(--seat-available);
+  color: #ffffff;
+  border: 2px solid #059669;
+  box-shadow: var(--shadow-sm);
+}
+
+.builder-slot.active-seat:hover {
+  background: #059669;
+}
+
+.builder-slot.empty-aisle {
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+}
+
+.builder-slot.empty-aisle:hover {
+  background: rgba(148, 163, 184, 0.3);
+}
+
+.builder-stats-bar {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 440px;
+  margin-top: 1rem;
+  font-size: 0.88rem;
+  color: var(--secondary);
 }

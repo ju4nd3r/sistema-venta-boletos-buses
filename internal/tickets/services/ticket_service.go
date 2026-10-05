@@ -22,6 +22,7 @@ type TicketService interface {
 	GetTripByID(ctx context.Context, tripID int) (*models.Trip, error)
 	GetSeatMap(ctx context.Context, tripID int) ([]models.SeatMapStatus, error)
 	BookSeat(ctx context.Context, req *models.BookingRequest) (*models.Ticket, error)
+	BookMultipleSeats(ctx context.Context, req *models.MultiBookingRequest) (*models.MultiBookingResponse, error)
 	GetTicketByID(ctx context.Context, ticketID int) (*models.Ticket, error)
 	GetTicketsByTrip(ctx context.Context, tripID int) ([]models.Ticket, error)
 }
@@ -96,6 +97,47 @@ func (s *ticketService) BookSeat(ctx context.Context, req *models.BookingRequest
 	// Load enriched details
 	return s.repo.GetTicketByID(ctx, ticket.ID)
 }
+
+func (s *ticketService) BookMultipleSeats(ctx context.Context, req *models.MultiBookingRequest) (*models.MultiBookingResponse, error) {
+	if req.TripID <= 0 {
+		return nil, errors.New("invalid trip ID")
+	}
+	if len(req.Passengers) == 0 {
+		return nil, errors.New("at least one passenger seat must be selected")
+	}
+
+	req.Status = strings.ToUpper(strings.TrimSpace(req.Status))
+	if req.Status == "" {
+		req.Status = models.TicketStatusPaid
+	} else if req.Status != models.TicketStatusReserved && req.Status != models.TicketStatusPaid {
+		return nil, ErrInvalidStatus
+	}
+
+	seenSeats := make(map[int]bool)
+	for i := range req.Passengers {
+		p := &req.Passengers[i]
+		p.PassengerName = strings.TrimSpace(p.PassengerName)
+		p.DocumentID = strings.TrimSpace(p.DocumentID)
+
+		if p.SeatID <= 0 {
+			return nil, errors.New("invalid seat ID")
+		}
+		if seenSeats[p.SeatID] {
+			return nil, errors.New("duplicate seat assigned to multiple passengers")
+		}
+		seenSeats[p.SeatID] = true
+
+		if p.PassengerName == "" {
+			return nil, ErrInvalidPassengerName
+		}
+		if p.DocumentID == "" {
+			return nil, ErrInvalidDocument
+		}
+	}
+
+	return s.repo.BookMultipleSeatsWithLock(ctx, req)
+}
+
 
 func (s *ticketService) GetTicketByID(ctx context.Context, ticketID int) (*models.Ticket, error) {
 	if ticketID <= 0 {

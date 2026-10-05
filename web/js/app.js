@@ -13,14 +13,25 @@ const state = {
   routes: [],
   trips: [],
   currentTrip: null,
-  selectedSeat: null,
-  currentSeats: []
+  selectedSeats: [], // Array of selected seat objects
+  currentSeats: [],
+  passengerDetails: {} // Cache for passenger input values { idx: { name, doc } }
+};
+
+// Admin Bus Builder State
+const adminBuilderState = {
+  mode: 'builder', // 'builder' or 'quick'
+  rows: 5,
+  cols: 4,
+  slots: [] // Array of { row, col, active: bool, seatNum: number }
 };
 
 // ==========================================
 // INITIALIZATION
 // ==========================================
 document.addEventListener('DOMContentLoaded', async () => {
+  initTheme();
+  initAdminBuilderGrid();
   await loadInitialData();
   setupEventListeners();
 });
@@ -54,6 +65,48 @@ function setupEventListeners() {
       }
     });
   }
+}
+
+// ==========================================
+// THEME SWITCHER (DARK / LIGHT MODE)
+// ==========================================
+function initTheme() {
+  const savedTheme = localStorage.getItem('busticket_theme') || 
+    (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  applyTheme(savedTheme);
+}
+
+function toggleTheme() {
+  const currentTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  applyTheme(newTheme);
+  localStorage.setItem('busticket_theme', newTheme);
+  showToast(`Switched to ${newTheme === 'dark' ? 'Dark' : 'Light'} Mode`, 'info');
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const icon = document.getElementById('theme-icon');
+  const text = document.getElementById('theme-text');
+  if (icon && text) {
+    if (theme === 'dark') {
+      icon.textContent = '☀️';
+      text.textContent = 'Light Mode';
+    } else {
+      icon.textContent = '🌙';
+      text.textContent = 'Dark Mode';
+    }
+  }
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 // ==========================================
@@ -164,10 +217,16 @@ function populateDropdowns() {
   if (routeDest) routeDest.innerHTML = '<option value="">Select Destination...</option>' + cityOptions;
 
   // 2. Bus Types Dropdown
+  const busTypeOptions = '<option value="">Select Category...</option>' + 
+    state.busTypes.map(bt => `<option value="${bt.id}">${bt.nombre} (${bt.capacidad_sillas} seats)</option>`).join('');
+
   const busTypeSelect = document.getElementById('bus-type-select');
   if (busTypeSelect) {
-    busTypeSelect.innerHTML = '<option value="">Select Category...</option>' + 
-      state.busTypes.map(bt => `<option value="${bt.id}">${bt.nombre} (${bt.capacidad_sillas} seats)</option>`).join('');
+    busTypeSelect.innerHTML = busTypeOptions;
+  }
+  const builderBusTypeSelect = document.getElementById('builder-bus-type-select');
+  if (builderBusTypeSelect) {
+    builderBusTypeSelect.innerHTML = busTypeOptions;
   }
 
   // 3. Trips Scheduler Dropdowns
@@ -275,6 +334,49 @@ async function handleSearchTrips(e) {
   }
 }
 
+// ==========================================
+// PASSENGER SELECTION & MULTI-BOOKING LOGIC
+// ==========================================
+
+function getPassengerRequirements() {
+  const adultsInput = document.getElementById('search-adults');
+  const childrenInput = document.getElementById('search-children');
+  const adults = adultsInput ? Math.max(1, parseInt(adultsInput.value, 10) || 1) : 1;
+  const children = childrenInput ? Math.max(0, parseInt(childrenInput.value, 10) || 0) : 0;
+  return { adults, children, total: adults + children };
+}
+
+function handlePassengerCountChange() {
+  const { adults, children, total } = getPassengerRequirements();
+  
+  const reqCountEl = document.getElementById('status-required-count');
+  const neededBannerCount = document.getElementById('banner-needed-count');
+  const passTypesBanner = document.getElementById('banner-passenger-types');
+  const passBreakdown = document.getElementById('summary-passengers-breakdown');
+
+  if (reqCountEl) reqCountEl.textContent = total;
+  if (neededBannerCount) neededBannerCount.textContent = `${total} ${total === 1 ? 'seat' : 'seats'}`;
+  const typesText = `${adults} ${adults === 1 ? 'Adult' : 'Adults'}${children > 0 ? `, ${children} ${children === 1 ? 'Child' : 'Children'}` : ''}`;
+  if (passTypesBanner) passTypesBanner.textContent = typesText;
+  if (passBreakdown) passBreakdown.textContent = typesText;
+
+  // If user decreased count and we now have more seats selected than total, deselect excess
+  if (state.selectedSeats.length > total) {
+    const removedSeats = state.selectedSeats.slice(total);
+    state.selectedSeats = state.selectedSeats.slice(0, total);
+    removedSeats.forEach(s => {
+      const btn = document.querySelector(`.seat-btn[data-seat-id="${s.silla_id}"]`);
+      if (btn) {
+        btn.classList.remove('selected');
+        btn.classList.add('available');
+      }
+    });
+    showToast(`Passenger count set to ${total}. Excess seats deselected.`, 'info');
+  }
+
+  updateSelectionUI();
+}
+
 async function selectTripForBooking(tripID) {
   try {
     // 1. Fetch trip details and seats
@@ -293,7 +395,8 @@ async function selectTripForBooking(tripID) {
 
     state.currentTrip = tripJson.data;
     state.currentSeats = seatsJson.data;
-    state.selectedSeat = null;
+    state.selectedSeats = [];
+    state.passengerDetails = {};
 
     // 2. Update Checkout summary
     const trip = state.currentTrip;
@@ -305,12 +408,9 @@ async function selectTripForBooking(tripID) {
       timeStyle: 'short'
     });
     document.getElementById('summary-bus').textContent = `${trip.bus ? trip.bus.placa : ''} (${trip.bus && trip.bus.tipo_bus ? trip.bus.tipo_bus.nombre : ''})`;
-    document.getElementById('summary-seat').textContent = 'None selected';
-    document.getElementById('summary-price').textContent = `$${Number(trip.precio_boleto).toLocaleString()} COP`;
-
     document.getElementById('booking-trip-id').value = trip.id;
-    document.getElementById('booking-seat-id').value = '';
-    document.getElementById('btn-book-ticket').disabled = true;
+
+    handlePassengerCountChange();
 
     // 3. Render Bus Interactive Seats Grid
     renderBusSeatGrid(state.currentSeats);
@@ -338,10 +438,10 @@ function renderBusSeatGrid(seats) {
   for (let r = 1; r <= maxRow; r++) {
     const rowSeats = seats.filter(s => s.fila === r);
     
-    // Sort by column: 1, 2, [aisle], 3, 4
+    // Support columns: 1, 2, [aisle], 3, 4
     for (let c = 1; c <= 4; c++) {
       if (c === 3) {
-        // Insert aisle placeholder
+        // Central aisle
         const aisle = document.createElement('div');
         aisle.className = 'aisle-space';
         grid.appendChild(aisle);
@@ -357,19 +457,18 @@ function renderBusSeatGrid(seats) {
         btn.dataset.seatNum = seat.numero_silla;
 
         if (!seat.disponible) {
-          // OCCUPIED (Red, disabled)
           btn.classList.add('occupied');
           btn.disabled = true;
           btn.title = `Seat ${seat.numero_silla}: Occupied (${seat.nombre_pasajero || 'Booked'})`;
         } else {
-          // AVAILABLE (Green, clickable)
-          btn.classList.add('available');
+          // Check if currently selected
+          const isSelected = state.selectedSeats.some(s => s.silla_id === seat.silla_id);
+          btn.classList.add(isSelected ? 'selected' : 'available');
           btn.title = `Seat ${seat.numero_silla}: Available for selection`;
-          btn.onclick = () => selectSeat(seat, btn);
+          btn.onclick = () => toggleSeatSelection(seat, btn);
         }
         grid.appendChild(btn);
       } else {
-        // Empty slot
         const empty = document.createElement('div');
         grid.appendChild(empty);
       }
@@ -377,42 +476,166 @@ function renderBusSeatGrid(seats) {
   }
 }
 
-function selectSeat(seat, btnElement) {
-  // Clear previous selection
-  document.querySelectorAll('.seat-btn.selected').forEach(el => {
-    el.classList.remove('selected');
-    el.classList.add('available');
+function toggleSeatSelection(seat, btnElement) {
+  const { total } = getPassengerRequirements();
+  const existingIdx = state.selectedSeats.findIndex(s => s.silla_id === seat.silla_id);
+
+  if (existingIdx >= 0) {
+    // Already selected -> DESELECT
+    state.selectedSeats.splice(existingIdx, 1);
+    btnElement.classList.remove('selected');
+    btnElement.classList.add('available');
+  } else {
+    // Attempt selection
+    if (state.selectedSeats.length >= total) {
+      showToast(`You have already selected ${total} of ${total} required seats. Click a selected seat to deselect it.`, 'info');
+      return;
+    }
+    state.selectedSeats.push(seat);
+    btnElement.classList.remove('available');
+    btnElement.classList.add('selected');
+  }
+
+  updateSelectionUI();
+}
+
+function updateSelectionUI() {
+  const { adults, children, total } = getPassengerRequirements();
+  const selectedCount = state.selectedSeats.length;
+
+  const selCountEl = document.getElementById('status-selected-count');
+  if (selCountEl) selCountEl.textContent = selectedCount;
+
+  // Update chips in checkout summary
+  const chipsContainer = document.getElementById('summary-seats-chips');
+  if (chipsContainer) {
+    if (state.selectedSeats.length === 0) {
+      chipsContainer.innerHTML = '<span style="color: var(--secondary); font-size: 0.85rem;">None selected</span>';
+    } else {
+      chipsContainer.innerHTML = state.selectedSeats
+        .map(s => `<span class="seat-badge-chip">#${s.numero_silla}</span>`)
+        .join(' ');
+    }
+  }
+
+  // Update total price
+  const priceEl = document.getElementById('summary-price');
+  if (priceEl && state.currentTrip) {
+    const totalAmount = Number(state.currentTrip.precio_boleto) * selectedCount;
+    priceEl.textContent = `$${totalAmount.toLocaleString()} COP`;
+  }
+
+  // Render passenger details inputs
+  renderPassengerInputs(adults, children, total);
+
+  // Enable/disable checkout button
+  const bookBtn = document.getElementById('btn-book-ticket');
+  if (bookBtn) {
+    if (selectedCount === total && total > 0) {
+      bookBtn.disabled = false;
+      bookBtn.textContent = `Confirm & Book ${total} ${total === 1 ? 'Ticket' : 'Tickets'}`;
+    } else {
+      bookBtn.disabled = true;
+      const remaining = total - selectedCount;
+      bookBtn.textContent = remaining > 0 
+        ? `Select ${remaining} more ${remaining === 1 ? 'seat' : 'seats'} to proceed`
+        : `Confirm & Book Tickets`;
+    }
+  }
+}
+
+function renderPassengerInputs(adults, children, total) {
+  const listContainer = document.getElementById('passengers-inputs-list');
+  if (!listContainer) return;
+
+  if (state.selectedSeats.length === 0) {
+    listContainer.innerHTML = `
+      <p style="color: var(--text-muted); font-size: 0.88rem; font-style: italic; margin-bottom: 1rem;">
+        Please select ${total} ${total === 1 ? 'seat' : 'seats'} on the bus map above to enter passenger details.
+      </p>
+    `;
+    return;
+  }
+
+  // Cache existing inputs
+  state.selectedSeats.forEach((_, idx) => {
+    const nameInput = document.getElementById(`passenger-name-${idx}`);
+    const docInput = document.getElementById(`passenger-doc-${idx}`);
+    if (nameInput && docInput) {
+      state.passengerDetails[idx] = {
+        name: nameInput.value,
+        doc: docInput.value
+      };
+    }
   });
 
-  // Apply selection
-  btnElement.classList.remove('available');
-  btnElement.classList.add('selected');
+  listContainer.innerHTML = state.selectedSeats.map((seat, idx) => {
+    const isAdult = idx < adults;
+    const typeLabel = isAdult ? 'ADULT' : 'CHILD';
+    const typeBadgeClass = isAdult ? 'adult' : 'child';
+    const saved = state.passengerDetails[idx] || { name: '', doc: '' };
 
-  state.selectedSeat = seat;
-  document.getElementById('booking-seat-id').value = seat.silla_id;
-  document.getElementById('summary-seat').textContent = `Seat #${seat.numero_silla} (Row ${seat.fila}, Col ${seat.columna})`;
-  document.getElementById('btn-book-ticket').disabled = false;
+    return `
+      <div class="passenger-card">
+        <div class="passenger-card-header">
+          <span>Passenger ${idx + 1} (Seat #${seat.numero_silla})</span>
+          <span class="passenger-type-badge ${typeBadgeClass}">${typeLabel}</span>
+        </div>
+        <div class="form-group" style="margin-bottom: 0.6rem;">
+          <label for="passenger-name-${idx}">Full Name</label>
+          <input type="text" id="passenger-name-${idx}" class="form-control" 
+            placeholder="e.g. ${isAdult ? 'Maria Gonzalez' : 'Lucas Gonzalez'}" 
+            value="${escapeHtml(saved.name)}" required>
+        </div>
+        <div class="form-group">
+          <label for="passenger-doc-${idx}">ID / Document Number</label>
+          <input type="text" id="passenger-doc-${idx}" class="form-control" 
+            placeholder="e.g. ${isAdult ? '1020304050' : 'TI-98765432'}" 
+            value="${escapeHtml(saved.doc)}" required>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 async function handleConfirmBooking(e) {
   e.preventDefault();
   const tripId = parseInt(document.getElementById('booking-trip-id').value, 10);
-  const seatId = parseInt(document.getElementById('booking-seat-id').value, 10);
-  const name = document.getElementById('passenger-name').value.trim();
-  const doc = document.getElementById('passenger-doc').value.trim();
-  const status = document.getElementById('payment-status').value;
+  const { adults, total } = getPassengerRequirements();
 
-  if (!tripId || !seatId) {
-    showToast('Please select an available seat first', 'error');
+  if (state.selectedSeats.length !== total) {
+    showToast(`Please select all ${total} seats before confirming.`, 'error');
     return;
+  }
+
+  // Gather passenger inputs
+  const passengers = [];
+  for (let idx = 0; idx < state.selectedSeats.length; idx++) {
+    const seat = state.selectedSeats[idx];
+    const nameInput = document.getElementById(`passenger-name-${idx}`);
+    const docInput = document.getElementById(`passenger-doc-${idx}`);
+    const name = nameInput ? nameInput.value.trim() : '';
+    const doc = docInput ? docInput.value.trim() : '';
+    const isAdult = idx < adults;
+
+    if (!name || !doc) {
+      showToast(`Please fill in all details for Passenger ${idx + 1} (Seat #${seat.numero_silla})`, 'error');
+      if (nameInput && !name) nameInput.focus();
+      else if (docInput) docInput.focus();
+      return;
+    }
+
+    passengers.push({
+      silla_id: seat.silla_id,
+      nombre_pasajero: name,
+      documento: doc,
+      tipo_pasajero: isAdult ? 'ADULT' : 'CHILD'
+    });
   }
 
   const payload = {
     viaje_id: tripId,
-    silla_id: seatId,
-    nombre_pasajero: name,
-    documento: doc,
-    estado: status
+    pasajeros: passengers
   };
 
   const btn = document.getElementById('btn-book-ticket');
@@ -420,7 +643,7 @@ async function handleConfirmBooking(e) {
   btn.textContent = 'Processing reservation...';
 
   try {
-    const res = await fetch(`${API_BASE}/tickets/book`, {
+    const res = await fetch(`${API_BASE}/tickets/book-multiple`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -429,32 +652,30 @@ async function handleConfirmBooking(e) {
     const json = await res.json();
 
     if (res.status === 409) {
-      // RACE CONDITION DETECTED!
-      showToast('⚠️ CONFLICT: This seat was just reserved by another customer at the same time! Please choose another seat.', 'error');
-      // Refresh seat map immediately to show the seat occupied in red
+      showToast('⚠️ CONFLICT: One or more selected seats were just reserved by another customer! Please choose alternative seats.', 'error');
       await selectTripForBooking(tripId);
       return;
     }
 
     if (!res.ok || !json.success) {
-      showToast(json.error || 'Failed to book ticket', 'error');
+      showToast(json.error || 'Failed to book tickets', 'error');
       btn.disabled = false;
-      btn.textContent = 'Confirm & Reserve Seat';
+      btn.textContent = `Confirm & Book ${total} Tickets`;
       return;
     }
 
     // Success! Show confirmation receipt
-    showToast('🎉 Ticket successfully booked!', 'success');
-    renderBookingReceipt(json.data);
+    showToast(`🎉 Successfully booked ${json.data.cantidad_pasajeros} tickets!`, 'success');
+    renderMultiBookingReceipt(json.data);
 
   } catch (err) {
     showToast('Network error during booking: ' + err.message, 'error');
     btn.disabled = false;
-    btn.textContent = 'Confirm & Reserve Seat';
+    btn.textContent = `Confirm & Book ${total} Tickets`;
   }
 }
 
-function renderBookingReceipt(ticket) {
+function renderMultiBookingReceipt(multiRes) {
   document.getElementById('seat-booking-section').style.display = 'none';
   const confirmationSec = document.getElementById('booking-confirmation-section');
   const details = document.getElementById('booking-receipt-details');
@@ -467,15 +688,32 @@ function renderBookingReceipt(ticket) {
     timeStyle: 'short'
   });
 
+  const ticketsList = multiRes.boletos.map(t => {
+    const seatObj = state.currentSeats.find(s => s.silla_id === t.silla_id);
+    const seatLabel = seatObj ? `Seat #${seatObj.numero_silla} (Row ${seatObj.fila}, Col ${seatObj.columna})` : `Seat ID #${t.silla_id}`;
+    return `
+      <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.75rem 1rem; margin-top: 0.5rem;">
+        <div style="display: flex; justify-content: space-between; font-weight: 700; margin-bottom: 0.25rem;">
+          <span>Ticket #TKT-${t.id.toString().padStart(6, '0')}</span>
+          <span class="badge badge-success">${t.estado}</span>
+        </div>
+        <div style="font-size: 0.9rem;">
+          <strong>${escapeHtml(t.nombre_pasajero)}</strong> (Doc: ${escapeHtml(t.documento)}) ➔ <span style="color: var(--primary); font-weight: 600;">${seatLabel}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
   details.innerHTML = `
-    <p><strong>Ticket ID / Code:</strong> #TKT-${ticket.id.toString().padStart(6, '0')}</p>
-    <p><strong>Passenger:</strong> ${ticket.nombre_pasajero} (Doc: ${ticket.documento})</p>
+    <p><strong>Total Tickets Issued:</strong> ${multiRes.cantidad_pasajeros}</p>
     <p><strong>Route:</strong> ${origin} ➔ ${dest}</p>
-    <p><strong>Seat:</strong> Seat #${state.selectedSeat.numero_silla} (Row ${state.selectedSeat.fila}, Col ${state.selectedSeat.columna})</p>
     <p><strong>Departure:</strong> ${departure}</p>
     <p><strong>Vehicle:</strong> ${trip.bus ? trip.bus.placa : ''} (${trip.bus && trip.bus.tipo_bus ? trip.bus.tipo_bus.nombre : ''})</p>
-    <p><strong>Status:</strong> <span class="badge badge-success">${ticket.estado}</span></p>
-    <p><strong>Total Amount:</strong> $${Number(trip.precio_boleto).toLocaleString()} COP</p>
+    <p><strong>Total Transaction Amount:</strong> <strong style="color: #047857; font-size: 1.15rem;">$${Number(multiRes.monto_total).toLocaleString()} COP</strong></p>
+    <div style="margin-top: 1rem;">
+      <h4 style="color: var(--secondary); margin-bottom: 0.5rem;">Passenger Tickets Breakdown:</h4>
+      ${ticketsList}
+    </div>
   `;
 
   confirmationSec.style.display = 'block';
@@ -484,8 +722,8 @@ function renderBookingReceipt(ticket) {
 
 function resetBookingView() {
   document.getElementById('booking-confirmation-section').style.display = 'none';
-  document.getElementById('passenger-name').value = '';
-  document.getElementById('passenger-doc').value = '';
+  state.selectedSeats = [];
+  state.passengerDetails = {};
   document.getElementById('seat-booking-section').style.display = 'none';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -578,7 +816,154 @@ async function handleCreateBusType(e) {
   }
 }
 
-// --- Buses ---
+// --- Interactive Custom Bus Builder ---
+function setBusCreationMode(mode) {
+  adminBuilderState.mode = mode;
+  const builderPane = document.getElementById('admin-bus-builder-pane');
+  const quickForm = document.getElementById('create-bus-form');
+  const btnBuilder = document.getElementById('btn-mode-builder');
+  const btnQuick = document.getElementById('btn-mode-quick');
+
+  if (mode === 'builder') {
+    if (builderPane) builderPane.style.display = 'block';
+    if (quickForm) quickForm.style.display = 'none';
+    if (btnBuilder) btnBuilder.classList.add('active');
+    if (btnQuick) btnQuick.classList.remove('active');
+  } else {
+    if (builderPane) builderPane.style.display = 'none';
+    if (quickForm) quickForm.style.display = 'block';
+    if (btnBuilder) btnBuilder.classList.remove('active');
+    if (btnQuick) btnQuick.classList.add('active');
+  }
+}
+
+function initAdminBuilderGrid() {
+  const rowsInput = document.getElementById('builder-rows');
+  const colsInput = document.getElementById('builder-cols');
+  const rows = rowsInput ? Math.min(15, Math.max(1, parseInt(rowsInput.value, 10) || 5)) : 5;
+  const cols = colsInput ? Math.min(6, Math.max(2, parseInt(colsInput.value, 10) || 4)) : 4;
+
+  adminBuilderState.rows = rows;
+  adminBuilderState.cols = cols;
+  adminBuilderState.slots = [];
+
+  // Initialize slots. Default aisle at column 3 if 4 or 5 columns
+  for (let r = 1; r <= rows; r++) {
+    for (let c = 1; c <= cols; c++) {
+      const isDefaultAisle = (cols === 4 && c === 3) || (cols === 5 && c === 3);
+      adminBuilderState.slots.push({
+        row: r,
+        col: c,
+        active: !isDefaultAisle,
+        seatNum: 0
+      });
+    }
+  }
+
+  renderAdminBuilderGrid();
+}
+
+function renderAdminBuilderGrid() {
+  const gridContainer = document.getElementById('admin-builder-slots-grid');
+  if (!gridContainer) return;
+
+  gridContainer.style.gridTemplateColumns = `repeat(${adminBuilderState.cols}, 48px)`;
+  gridContainer.innerHTML = '';
+
+  // Sequentially re-number active seats
+  let seatSeq = 1;
+  adminBuilderState.slots.forEach(slot => {
+    if (slot.active) {
+      slot.seatNum = seatSeq++;
+    } else {
+      slot.seatNum = 0;
+    }
+  });
+
+  adminBuilderState.slots.forEach((slot, idx) => {
+    const slotEl = document.createElement('div');
+    slotEl.className = `builder-slot ${slot.active ? 'active-seat' : 'empty-aisle'}`;
+    slotEl.title = slot.active 
+      ? `Seat #${slot.seatNum} (Row ${slot.row}, Col ${slot.col}) - Click to toggle Aisle` 
+      : `Aisle Space (Row ${slot.row}, Col ${slot.col}) - Click to toggle Seat`;
+    slotEl.innerHTML = slot.active ? `<span>#${slot.seatNum}</span>` : `<span style="font-size:0.75rem;">Aisle</span>`;
+    slotEl.onclick = () => toggleBuilderSlot(idx);
+    gridContainer.appendChild(slotEl);
+  });
+
+  const activeCount = adminBuilderState.slots.filter(s => s.active).length;
+  const countEl = document.getElementById('builder-active-seats-count');
+  if (countEl) countEl.textContent = activeCount;
+
+  const dimEl = document.getElementById('builder-dimensions-label');
+  if (dimEl) dimEl.textContent = `${adminBuilderState.rows} Rows x ${adminBuilderState.cols} Cols`;
+}
+
+function toggleBuilderSlot(index) {
+  if (index >= 0 && index < adminBuilderState.slots.length) {
+    adminBuilderState.slots[index].active = !adminBuilderState.slots[index].active;
+    renderAdminBuilderGrid();
+  }
+}
+
+async function handleSaveCustomBus(e) {
+  e.preventDefault();
+  const plate = document.getElementById('builder-bus-plate').value.trim();
+  const typeId = parseInt(document.getElementById('builder-bus-type-select').value, 10);
+  const internalNum = document.getElementById('builder-bus-internal-num').value.trim();
+
+  const activeSlots = adminBuilderState.slots.filter(s => s.active);
+  if (activeSlots.length === 0) {
+    showToast('Please enable at least 1 seat in the visual bus designer', 'error');
+    return;
+  }
+
+  const customSeats = activeSlots.map(s => ({
+    numero_silla: s.seatNum,
+    fila: s.row,
+    columna: s.col
+  }));
+
+  const payload = {
+    placa: plate,
+    tipo_bus_id: typeId,
+    numero_interno: internalNum,
+    sillas: customSeats
+  };
+
+  const saveBtn = document.getElementById('btn-save-custom-bus');
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving custom bus...';
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/admin/buses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json();
+    if (json.success) {
+      showToast(`🎉 Custom bus ${plate} created with ${customSeats.length} seats!`, 'success');
+      document.getElementById('custom-bus-builder-form').reset();
+      initAdminBuilderGrid();
+      await fetchBuses();
+      populateDropdowns();
+    } else {
+      showToast(json.error || 'Failed to create custom bus', 'error');
+    }
+  } catch (err) {
+    showToast('Error: ' + err.message, 'error');
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = '💾 Save Bus with Custom Seats';
+    }
+  }
+}
+
+// --- Quick Auto-Generate Buses ---
 async function handleCreateBus(e) {
   e.preventDefault();
   const plate = document.getElementById('bus-plate').value.trim();

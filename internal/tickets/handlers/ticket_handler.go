@@ -31,6 +31,7 @@ func (h *TicketHandler) RegisterRoutes(rg *gin.RouterGroup) {
 
 	// Booking and tickets
 	rg.POST("/tickets/book", h.BookSeat)
+	rg.POST("/tickets/book-multiple", h.BookMultipleSeats)
 	rg.GET("/tickets/:id", h.GetTicketByID)
 }
 
@@ -142,6 +143,44 @@ func (h *TicketHandler) BookSeat(c *gin.Context) {
 		"data":    ticket,
 	})
 }
+
+// BookMultipleSeats handles atomic multi-seat ticket booking with race condition protection
+func (h *TicketHandler) BookMultipleSeats(c *gin.Context) {
+	var req models.MultiBookingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	response, err := h.service.BookMultipleSeats(c.Request.Context(), &req)
+	if err != nil {
+		if errors.Is(err, repositories.ErrSeatAlreadyOccupied) {
+			c.JSON(http.StatusConflict, gin.H{
+				"success": false,
+				"error":   err.Error(),
+				"code":    "SEAT_UNAVAILABLE",
+			})
+			return
+		}
+		if errors.Is(err, repositories.ErrSeatNotFound) || errors.Is(err, repositories.ErrTripNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, services.ErrInvalidPassengerName) || errors.Is(err, services.ErrInvalidDocument) || errors.Is(err, services.ErrInvalidStatus) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"success": true,
+		"message": "all tickets booked successfully",
+		"data":    response,
+	})
+}
+
 
 // GetTicketByID returns ticket confirmation
 func (h *TicketHandler) GetTicketByID(c *gin.Context) {

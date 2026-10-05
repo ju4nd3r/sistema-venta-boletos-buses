@@ -15,9 +15,10 @@ import (
 type MockTicketRepository struct {
 	SearchTripsFunc        func(ctx context.Context, originCityID, destCityID int, date string) ([]models.Trip, error)
 	GetTripByIDFunc        func(ctx context.Context, tripID int) (*models.Trip, error)
-	GetSeatMapByTripIDFunc func(ctx context.Context, tripID int) ([]models.SeatMapStatus, error)
-	BookSeatWithLockFunc   func(ctx context.Context, req *models.BookingRequest) (*models.Ticket, error)
-	GetTicketByIDFunc      func(ctx context.Context, ticketID int) (*models.Ticket, error)
+	GetSeatMapByTripIDFunc        func(ctx context.Context, tripID int) ([]models.SeatMapStatus, error)
+	BookSeatWithLockFunc          func(ctx context.Context, req *models.BookingRequest) (*models.Ticket, error)
+	BookMultipleSeatsWithLockFunc func(ctx context.Context, req *models.MultiBookingRequest) (*models.MultiBookingResponse, error)
+	GetTicketByIDFunc             func(ctx context.Context, ticketID int) (*models.Ticket, error)
 	GetTicketsByTripIDFunc func(ctx context.Context, tripID int) ([]models.Ticket, error)
 }
 
@@ -56,6 +57,30 @@ func (m *MockTicketRepository) BookSeatWithLock(ctx context.Context, req *models
 		CreatedAt:     time.Now(),
 	}, nil
 }
+
+func (m *MockTicketRepository) BookMultipleSeatsWithLock(ctx context.Context, req *models.MultiBookingRequest) (*models.MultiBookingResponse, error) {
+	if m.BookMultipleSeatsWithLockFunc != nil {
+		return m.BookMultipleSeatsWithLockFunc(ctx, req)
+	}
+	tickets := make([]models.Ticket, len(req.Passengers))
+	for i, p := range req.Passengers {
+		tickets[i] = models.Ticket{
+			ID:            i + 1,
+			TripID:        req.TripID,
+			SeatID:        p.SeatID,
+			PassengerName: p.PassengerName,
+			DocumentID:    p.DocumentID,
+			Status:        req.Status,
+		}
+	}
+	return &models.MultiBookingResponse{
+		TripID:         req.TripID,
+		Tickets:        tickets,
+		TotalAmount:    float64(len(tickets)) * 85000,
+		PassengerCount: len(tickets),
+	}, nil
+}
+
 
 func (m *MockTicketRepository) GetTicketByID(ctx context.Context, ticketID int) (*models.Ticket, error) {
 	if m.GetTicketByIDFunc != nil {
@@ -251,3 +276,107 @@ func TestGetSeatMap_TripNotFound(t *testing.T) {
 		t.Fatalf("expected ErrTripNotFound, got: %v", err)
 	}
 }
+
+func TestBookMultipleSeats_Success(t *testing.T) {
+	mockRepo := &MockTicketRepository{
+		BookMultipleSeatsWithLockFunc: func(ctx context.Context, req *models.MultiBookingRequest) (*models.MultiBookingResponse, error) {
+			tickets := make([]models.Ticket, len(req.Passengers))
+			for i, p := range req.Passengers {
+				tickets[i] = models.Ticket{
+					ID:            i + 1,
+					TripID:        req.TripID,
+					SeatID:        p.SeatID,
+					PassengerName: p.PassengerName,
+					DocumentID:    p.DocumentID,
+					Status:        req.Status,
+				}
+			}
+			return &models.MultiBookingResponse{
+				TripID:         req.TripID,
+				Tickets:        tickets,
+				TotalAmount:    255000,
+				PassengerCount: len(tickets),
+			}, nil
+		},
+	}
+
+	service := services.NewTicketService(mockRepo)
+	req := &models.MultiBookingRequest{
+		TripID: 1,
+		Passengers: []models.PassengerItem{
+			{SeatID: 1, PassengerName: "Adult 1", DocumentID: "DOC-1", PassengerType: "ADULT"},
+			{SeatID: 2, PassengerName: "Adult 2", DocumentID: "DOC-2", PassengerType: "ADULT"},
+			{SeatID: 3, PassengerName: "Child 1", DocumentID: "DOC-3", PassengerType: "CHILD"},
+		},
+		Status: "PAGADO",
+	}
+
+	resp, err := service.BookMultipleSeats(context.Background(), req)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	if resp.PassengerCount != 3 {
+		t.Errorf("expected 3 passengers, got: %d", resp.PassengerCount)
+	}
+	if len(resp.Tickets) != 3 {
+		t.Errorf("expected 3 tickets, got: %d", len(resp.Tickets))
+	}
+}
+
+func TestBookMultipleSeats_BatchConflict(t *testing.T) {
+	mockRepo := &MockTicketRepository{
+		BookMultipleSeatsWithLockFunc: func(ctx context.Context, req *models.MultiBookingRequest) (*models.MultiBookingResponse, error) {
+			// Simulates rejection when even 1 seat is taken
+			return nil, repositories.ErrSeatAlreadyOccupied
+		},
+	}
+
+	service := services.NewTicketService(mockRepo)
+	req := &models.MultiBookingRequest{
+		TripID: 1,
+		Passengers: []models.PassengerItem{
+			{SeatID: 1, PassengerName: "Adult 1", DocumentID: "DOC-1"},
+			{SeatID: 2, PassengerName: "Adult 2", DocumentID: "DOC-2"},
+		},
+	}
+
+	_, err := service.BookMultipleSeats(context.Background(), req)
+	if !errors.Is(err, repositories.ErrSeatAlreadyOccupied) {
+		t.Fatalf("expected ErrSeatAlreadyOccupied, got: %v", err)
+	}
+}
+
+func TestBookMultipleSeats_DuplicateSeatInRequest(t *testing.T) {
+	mockRepo := &MockTicketRepository{}
+	service := services.NewTicketService(mockRepo)
+
+	req := &models.MultiBookingRequest{
+		TripID: 1,
+		Passengers: []models.PassengerItem{
+			{SeatID: 5, PassengerName: "Adult 1", DocumentID: "DOC-1"},
+			{SeatID: 5, PassengerName: "Adult 2", DocumentID: "DOC-2"}, // Duplicate seat ID in same batch
+		},
+	}
+
+	_, err := service.BookMultipleSeats(context.Background(), req)
+	if err == nil {
+		t.Fatalf("expected error for duplicate seat in same request, got nil")
+	}
+}
+
+func TestBookMultipleSeats_EmptyPassengers(t *testing.T) {
+	mockRepo := &MockTicketRepository{}
+	service := services.NewTicketService(mockRepo)
+
+	req := &models.MultiBookingRequest{
+		TripID:     1,
+		Passengers: []models.PassengerItem{},
+	}
+
+	_, err := service.BookMultipleSeats(context.Background(), req)
+	if err == nil {
+		t.Fatalf("expected error for empty passengers, got nil")
+	}
+}
+

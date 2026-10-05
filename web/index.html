@@ -14,7 +14,11 @@
         <span class="brand-icon">🚌</span>
         <span>BusTicket Pro</span>
       </a>
-      <div class="nav-links">
+      <div class="nav-links" style="display: flex; align-items: center; gap: 0.75rem;">
+        <button id="theme-toggle" class="theme-toggle-btn" type="button" onclick="toggleTheme()" title="Switch Light/Dark Mode">
+          <span id="theme-icon">🌙</span>
+          <span id="theme-text">Dark Mode</span>
+        </button>
         <button id="nav-client" class="nav-btn active" onclick="switchTab('client')">
           <span>🎟️</span> Buy Tickets
         </button>
@@ -36,7 +40,7 @@
       <section class="card">
         <h2 class="card-title">🔍 Search Scheduled Bus Trips</h2>
         <form id="search-trips-form" onsubmit="handleSearchTrips(event)">
-          <div class="form-grid">
+          <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));">
             <div class="form-group">
               <label for="search-origin">Origin City</label>
               <select id="search-origin" class="form-control" required>
@@ -54,6 +58,14 @@
               <input type="date" id="search-date" class="form-control">
             </div>
             <div class="form-group">
+              <label for="search-adults">Adults (18+)</label>
+              <input type="number" id="search-adults" class="form-control" min="1" max="10" value="1" required onchange="handlePassengerCountChange()">
+            </div>
+            <div class="form-group">
+              <label for="search-children">Children (0-17)</label>
+              <input type="number" id="search-children" class="form-control" min="0" max="10" value="0" onchange="handlePassengerCountChange()">
+            </div>
+            <div class="form-group" style="align-self: flex-end;">
               <button type="submit" class="btn btn-primary" style="width: 100%;">Search Trips</button>
             </div>
           </div>
@@ -69,7 +81,17 @@
       <!-- Interactive Bus Seat Selection & Booking Section -->
       <section id="seat-booking-section" style="display: none;">
         <div class="card">
-          <h2 class="card-title">💺 Interactive Bus Seat Selection</h2>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h2 class="card-title" style="margin-bottom: 0;">💺 Interactive Bus Seat Selection</h2>
+            <div id="selection-status-pill" class="badge badge-info" style="font-size: 0.9rem; padding: 0.4rem 0.8rem;">
+              Selecting seats: <span id="status-selected-count">0</span> / <span id="status-required-count">1</span>
+            </div>
+          </div>
+
+          <div id="selection-status-banner" class="selection-status-banner">
+            <span>Please select <strong id="banner-needed-count">1 seat</strong> on the bus map below to proceed with checkout.</span>
+            <span id="banner-passenger-types" style="color: var(--secondary);">1 Adult, 0 Children</span>
+          </div>
           
           <div class="booking-section">
             <!-- Bus Chassis and Seat Grid -->
@@ -103,7 +125,7 @@
 
             <!-- Checkout / Passenger Booking Panel -->
             <div class="checkout-card">
-              <h3 style="font-size: 1.1rem; margin-bottom: 1rem;">Ticket Checkout</h3>
+              <h3 style="font-size: 1.1rem; margin-bottom: 1rem;">Multi-Ticket Checkout</h3>
               
               <div class="checkout-summary">
                 <div class="summary-row">
@@ -119,27 +141,29 @@
                   <span id="summary-bus">-</span>
                 </div>
                 <div class="summary-row">
-                  <span style="color: var(--text-muted);">Seat Selected:</span>
-                  <strong id="summary-seat" style="color: var(--primary);">None selected</strong>
+                  <span style="color: var(--text-muted);">Passengers:</span>
+                  <strong id="summary-passengers-breakdown">1 Adult</strong>
+                </div>
+                <div class="summary-row">
+                  <span style="color: var(--text-muted);">Seats:</span>
+                  <div id="summary-seats-chips" style="text-align: right;">
+                    <span style="color: var(--secondary); font-size: 0.85rem;">None selected</span>
+                  </div>
                 </div>
                 <div class="summary-row total">
-                  <span>Price:</span>
-                  <span id="summary-price">$0</span>
+                  <span>Total Amount:</span>
+                  <span id="summary-price">$0 COP</span>
                 </div>
               </div>
 
               <form id="booking-form" onsubmit="handleConfirmBooking(event)">
                 <input type="hidden" id="booking-trip-id">
-                <input type="hidden" id="booking-seat-id">
 
-                <div class="form-group" style="margin-bottom: 0.85rem;">
-                  <label for="passenger-name">Passenger Full Name</label>
-                  <input type="text" id="passenger-name" class="form-control" placeholder="e.g. Maria Gonzalez" required>
-                </div>
-
-                <div class="form-group" style="margin-bottom: 0.85rem;">
-                  <label for="passenger-doc">Document / ID Number</label>
-                  <input type="text" id="passenger-doc" class="form-control" placeholder="e.g. 1020304050" required>
+                <!-- Dynamic Passenger Form Inputs Container -->
+                <div id="passengers-inputs-list">
+                  <p style="color: var(--text-muted); font-size: 0.88rem; font-style: italic; margin-bottom: 1rem;">
+                    Select your seats on the bus map to enter passenger details.
+                  </p>
                 </div>
 
                 <div class="form-group" style="margin-bottom: 1.25rem;">
@@ -151,7 +175,7 @@
                 </div>
 
                 <button type="submit" id="btn-book-ticket" class="btn btn-primary" style="width: 100%;" disabled>
-                  Confirm & Reserve Seat
+                  Confirm & Book Tickets
                 </button>
               </form>
             </div>
@@ -214,18 +238,18 @@
 
       <!-- Section 2: Bus Types & Fleet -->
       <section class="card">
-        <h2 class="card-title">🚌 Bus Types & Fleet Management (Auto-generated Seats)</h2>
+        <h2 class="card-title">🚌 Bus Types & Fleet Management</h2>
         
         <!-- Bus Type Form -->
-        <form id="create-bustype-form" onsubmit="handleCreateBusType(event)" style="margin-bottom: 1.5rem;">
-          <h4 style="margin-bottom: 0.5rem; color: var(--secondary);">1. Register Bus Type</h4>
+        <form id="create-bustype-form" onsubmit="handleCreateBusType(event)" style="margin-bottom: 2rem;">
+          <h4 style="margin-bottom: 0.5rem; color: var(--secondary);">1. Register Bus Type Category</h4>
           <div class="form-grid">
             <div class="form-group">
               <label for="bustype-name">Category Name</label>
               <input type="text" id="bustype-name" class="form-control" placeholder="e.g. VIP Double-Decker" required>
             </div>
             <div class="form-group">
-              <label for="bustype-capacity">Seat Capacity (Grid Generated)</label>
+              <label for="bustype-capacity">Seat Capacity (For auto-generation)</label>
               <input type="number" id="bustype-capacity" class="form-control" min="4" max="80" value="16" required>
             </div>
             <div class="form-group">
@@ -234,9 +258,88 @@
           </div>
         </form>
 
-        <!-- Bus Vehicle Form -->
-        <form id="create-bus-form" onsubmit="handleCreateBus(event)" style="margin-bottom: 1.5rem;">
-          <h4 style="margin-bottom: 0.5rem; color: var(--secondary);">2. Register New Bus (Automatically builds seat grid)</h4>
+        <h4 style="margin-bottom: 0.85rem; color: var(--secondary);">2. Register New Bus</h4>
+        
+        <!-- Bus Creation Mode Switcher -->
+        <div class="builder-mode-switcher">
+          <button id="btn-mode-builder" class="builder-mode-btn active" type="button" onclick="setBusCreationMode('builder')">
+            🎨 Interactive Custom Bus Builder (Visual Grid)
+          </button>
+          <button id="btn-mode-quick" class="builder-mode-btn" type="button" onclick="setBusCreationMode('quick')">
+            ⚡ Quick Auto-Generate (from Capacity)
+          </button>
+        </div>
+
+        <!-- Mode A: Interactive Bus Seat Grid Designer -->
+        <div id="admin-bus-builder-pane" style="margin-bottom: 2rem;">
+          <div class="admin-builder-container">
+            <!-- Builder Controls & Specs -->
+            <div>
+              <form id="custom-bus-builder-form" onsubmit="handleSaveCustomBus(event)">
+                <div class="form-group" style="margin-bottom: 0.75rem;">
+                  <label for="builder-bus-plate">License Plate</label>
+                  <input type="text" id="builder-bus-plate" class="form-control" placeholder="e.g. XYZ-123" required>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 0.75rem;">
+                  <label for="builder-bus-type-select">Bus Type Category</label>
+                  <select id="builder-bus-type-select" class="form-control" required>
+                    <option value="">Select Category...</option>
+                  </select>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 0.75rem;">
+                  <label for="builder-bus-internal-num">Internal Vehicle #</label>
+                  <input type="text" id="builder-bus-internal-num" class="form-control" placeholder="e.g. 707" required>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
+                  <div class="form-group">
+                    <label for="builder-rows">Rows</label>
+                    <input type="number" id="builder-rows" class="form-control" min="1" max="15" value="5" required>
+                  </div>
+                  <div class="form-group">
+                    <label for="builder-cols">Columns</label>
+                    <input type="number" id="builder-cols" class="form-control" min="2" max="6" value="4" required>
+                  </div>
+                </div>
+
+                <button type="button" class="btn" style="width: 100%; margin-bottom: 1rem; border: 1px solid var(--border);" onclick="initAdminBuilderGrid()">
+                  🔄 Refresh Grid Dimensions
+                </button>
+
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">
+                  💡 Click any slot on the bus preview to toggle between a <strong>Passenger Seat</strong> and an <strong>Aisle/Empty Space</strong>.
+                </p>
+
+                <button type="submit" id="btn-save-custom-bus" class="btn btn-primary" style="width: 100%;">
+                  💾 Save Bus with Custom Seats
+                </button>
+              </form>
+            </div>
+
+            <!-- Builder Interactive Preview -->
+            <div class="builder-grid-preview">
+              <div class="builder-bus-chassis">
+                <div class="bus-front-cabin">
+                  <span>Front of Bus</span>
+                  <span class="steering-wheel" title="Driver Cabin">🛞</span>
+                </div>
+
+                <!-- Clickable Interactive Slots Grid -->
+                <div id="admin-builder-slots-grid" class="builder-slots-grid"></div>
+              </div>
+
+              <div class="builder-stats-bar">
+                <span>Active Seats: <strong id="builder-active-seats-count" style="color: var(--seat-available);">0</strong></span>
+                <span>Layout: <strong id="builder-dimensions-label">5 x 4</strong></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mode B: Quick Auto-Generate Bus Vehicle Form -->
+        <form id="create-bus-form" onsubmit="handleCreateBus(event)" style="display: none; margin-bottom: 1.5rem;">
           <div class="form-grid">
             <div class="form-group">
               <label for="bus-plate">License Plate</label>

@@ -229,18 +229,36 @@ func (s *adminService) CreateBus(ctx context.Context, bus *models.Bus) error {
 		return ErrInvalidCapacity
 	}
 
-	// 2. Auto-generate seats in standard 4-column bus grid layout
-	// Columns: 1 (Window Left), 2 (Aisle Left), 3 (Aisle Right), 4 (Window Right)
-	seats := make([]models.Seat, busType.SeatCapacity)
-	for i := 0; i < busType.SeatCapacity; i++ {
-		seatNum := i + 1
-		row := (i / 4) + 1
-		col := (i % 4) + 1
+	// 2. Determine seat configuration: either custom configured from admin builder, or auto-generated
+	var seats []models.Seat
+	if len(bus.Seats) > 0 {
+		// Custom seats configured visually by admin
+		seats = make([]models.Seat, len(bus.Seats))
+		for i, s := range bus.Seats {
+			seatNum := s.SeatNumber
+			if seatNum <= 0 {
+				seatNum = i + 1
+			}
+			seats[i] = models.Seat{
+				SeatNumber: seatNum,
+				Row:        s.Row,
+				Column:     s.Column,
+			}
+		}
+	} else {
+		// Auto-generate seats in standard 4-column bus grid layout
+		// Columns: 1 (Window Left), 2 (Aisle Left), 3 (Aisle Right), 4 (Window Right)
+		seats = make([]models.Seat, busType.SeatCapacity)
+		for i := 0; i < busType.SeatCapacity; i++ {
+			seatNum := i + 1
+			row := (i / 4) + 1
+			col := (i % 4) + 1
 
-		seats[i] = models.Seat{
-			SeatNumber: seatNum,
-			Row:        row,
-			Column:     col,
+			seats[i] = models.Seat{
+				SeatNumber: seatNum,
+				Row:        row,
+				Column:     col,
+			}
 		}
 	}
 

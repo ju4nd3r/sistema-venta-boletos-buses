@@ -99,7 +99,7 @@ type SeatMapStatus struct {
 	PassengerName *string `json:"nombre_pasajero,omitempty"`
 }
 
-// BookingRequest contains payload required to purchase or reserve a seat
+// BookingRequest contains payload required to purchase or reserve a single seat
 type BookingRequest struct {
 	TripID        int    `json:"viaje_id" binding:"required"`
 	SeatID        int    `json:"silla_id" binding:"required"`
@@ -107,3 +107,27 @@ type BookingRequest struct {
 	DocumentID    string `json:"documento" binding:"required"`
 	Status        string `json:"estado"` // RESERVADO or PAGADO
 }
+
+// PassengerItem represents an individual passenger in a multi-seat reservation
+type PassengerItem struct {
+	SeatID        int    `json:"silla_id" binding:"required"`
+	PassengerName string `json:"nombre_pasajero" binding:"required"`
+	DocumentID    string `json:"documento" binding:"required"`
+	PassengerType string `json:"tipo_pasajero,omitempty"` // ADULT or CHILD
+}
+
+// MultiBookingRequest represents a transaction requesting multiple seat reservations
+type MultiBookingRequest struct {
+	TripID     int             `json:"viaje_id" binding:"required"`
+	Passengers []PassengerItem `json:"pasajeros" binding:"required,min=1"`
+	Status     string          `json:"estado"` // RESERVADO or PAGADO
+}
+
+// MultiBookingResponse summarizes all tickets booked in a single atomic transaction
+type MultiBookingResponse struct {
+	TripID         int      `json:"viaje_id"`
+	Tickets        []Ticket `json:"boletos"`
+	TotalAmount    float64  `json:"total_pagado"`
+	PassengerCount int      `json:"total_pasajeros"`
+}
+

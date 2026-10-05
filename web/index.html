@@ -202,43 +202,82 @@
     =========================================== -->
     <div id="tab-admin" class="tab-pane">
       
-      <!-- Section 1: Cities -->
-      <section class="card">
-        <h2 class="card-title">🏙️ Cities & Terminals Management</h2>
-        <form id="create-city-form" onsubmit="handleCreateCity(event)">
-          <div class="form-grid">
-            <div class="form-group">
-              <label for="city-name">City Name</label>
-              <input type="text" id="city-name" class="form-control" placeholder="e.g. Cali" required>
-            </div>
-            <div class="form-group">
-              <label for="city-terminal">Bus Terminal Name</label>
-              <input type="text" id="city-terminal" class="form-control" placeholder="e.g. Terminal de Transporte Cali" required>
-            </div>
-            <div class="form-group">
-              <button type="submit" class="btn btn-primary">Add City</button>
-            </div>
-          </div>
-        </form>
-
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>City Name</th>
-                <th>Terminal</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="cities-table-body"></tbody>
-          </table>
+      <!-- Admin Portal Header & Overview -->
+      <div class="admin-header-row">
+        <div class="admin-title-area">
+          <h2><span>⚙️</span> Fleet Operations & Administration</h2>
+          <p>Navigate and manage transport hubs, bus models, interactive custom seat configurations, routes, and departure schedules.</p>
         </div>
-      </section>
+      </div>
 
-      <!-- Section 2: Bus Types & Fleet -->
-      <section class="card">
-        <h2 class="card-title">🚌 Bus Types & Fleet Management</h2>
+      <!-- Admin Sub-Navigation Modules Bar -->
+      <nav class="admin-nav-bar" aria-label="Admin Operations Modules">
+        <button id="admin-subnav-cities" class="admin-subnav-btn active" type="button" onclick="switchAdminModule('cities')">
+          <span>🏙️</span>
+          <span>Cities & Terminals</span>
+          <span id="badge-cities-count" class="module-count-badge">0</span>
+        </button>
+        <button id="admin-subnav-fleet" class="admin-subnav-btn" type="button" onclick="switchAdminModule('fleet')">
+          <span>🚌</span>
+          <span>Bus Fleet & Builder</span>
+          <span id="badge-fleet-count" class="module-count-badge">0</span>
+        </button>
+        <button id="admin-subnav-routes" class="admin-subnav-btn" type="button" onclick="switchAdminModule('routes')">
+          <span>🛣️</span>
+          <span>Routes</span>
+          <span id="badge-routes-count" class="module-count-badge">0</span>
+        </button>
+        <button id="admin-subnav-trips" class="admin-subnav-btn" type="button" onclick="switchAdminModule('trips')">
+          <span>🗓️</span>
+          <span>Trip Scheduler</span>
+          <span id="badge-trips-count" class="module-count-badge">0</span>
+        </button>
+      </nav>
+
+      <!-- ==========================================
+           MODULE 1: CITIES & TERMINALS
+      =========================================== -->
+      <div id="admin-mod-cities" class="admin-module-pane active">
+        <section class="card">
+          <h2 class="card-title">🏙️ Cities & Terminals Management</h2>
+          <form id="create-city-form" onsubmit="handleCreateCity(event)">
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="city-name">City Name</label>
+                <input type="text" id="city-name" class="form-control" placeholder="e.g. Cali" required>
+              </div>
+              <div class="form-group">
+                <label for="city-terminal">Bus Terminal Name</label>
+                <input type="text" id="city-terminal" class="form-control" placeholder="e.g. Terminal de Transporte Cali" required>
+              </div>
+              <div class="form-group">
+                <button type="submit" class="btn btn-primary">Add City</button>
+              </div>
+            </div>
+          </form>
+
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>City Name</th>
+                  <th>Terminal</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="cities-table-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- ==========================================
+           MODULE 2: BUS TYPES & FLEET
+      =========================================== -->
+      <div id="admin-mod-fleet" class="admin-module-pane">
+        <section class="card">
+          <h2 class="card-title">🚌 Bus Types & Fleet Management</h2>
         
         <!-- Bus Type Form -->
         <form id="create-bustype-form" onsubmit="handleCreateBusType(event)" style="margin-bottom: 2rem;">
@@ -378,8 +417,12 @@
           </table>
         </div>
       </section>
+    </div>
 
-      <!-- Section 3: Routes -->
+    <!-- ==========================================
+         MODULE 3: ROUTES
+    =========================================== -->
+    <div id="admin-mod-routes" class="admin-module-pane">
       <section class="card">
         <h2 class="card-title">🛣️ Intermunicipal Routes</h2>
         <form id="create-route-form" onsubmit="handleCreateRoute(event)">
@@ -426,8 +469,12 @@
           </table>
         </div>
       </section>
+    </div>
 
-      <!-- Section 4: Scheduled Trips -->
+    <!-- ==========================================
+         MODULE 4: SCHEDULED TRIPS
+    =========================================== -->
+    <div id="admin-mod-trips" class="admin-module-pane">
       <section class="card">
         <h2 class="card-title">🗓️ Trip Scheduler</h2>
         <form id="create-trip-form" onsubmit="handleCreateTrip(event)">
@@ -475,7 +522,8 @@
         </div>
       </section>
     </div>
-  </main>
+  </div>
+</main>
 
   <!-- Toast Notification Container -->
   <div id="toast-container"></div>

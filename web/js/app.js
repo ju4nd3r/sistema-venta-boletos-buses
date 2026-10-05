@@ -34,6 +34,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   initAdminBuilderGrid();
   await loadInitialData();
   setupEventListeners();
+  const savedMod = localStorage.getItem('busticket_admin_module') || 'cities';
+  switchAdminModule(savedMod);
 });
 
 async function loadInitialData() {
@@ -122,8 +124,46 @@ function switchTab(tabName) {
   } else {
     document.getElementById('tab-admin').classList.add('active');
     document.getElementById('nav-admin').classList.add('active');
+    const savedMod = localStorage.getItem('busticket_admin_module') || 'cities';
+    switchAdminModule(savedMod);
     loadInitialData(); // Refresh admin tables
   }
+}
+
+function switchAdminModule(moduleName) {
+  // Hide all admin module panes
+  document.querySelectorAll('.admin-module-pane').forEach(el => el.classList.remove('active'));
+  // Deactivate all subnav buttons
+  document.querySelectorAll('.admin-subnav-btn').forEach(el => el.classList.remove('active'));
+
+  const targetPane = document.getElementById(`admin-mod-${moduleName}`);
+  const targetBtn = document.getElementById(`admin-subnav-${moduleName}`);
+
+  if (targetPane) targetPane.classList.add('active');
+  if (targetBtn) targetBtn.classList.add('active');
+
+  localStorage.setItem('busticket_admin_module', moduleName);
+
+  // If opening fleet module, ensure the bus builder grid renders smoothly
+  if (moduleName === 'fleet') {
+    if (adminBuilderState.slots.length === 0) {
+      initAdminBuilderGrid();
+    } else {
+      renderAdminBuilderGrid();
+    }
+  }
+}
+
+function updateAdminModuleBadges() {
+  const citiesBadge = document.getElementById('badge-cities-count');
+  const fleetBadge = document.getElementById('badge-fleet-count');
+  const routesBadge = document.getElementById('badge-routes-count');
+  const tripsBadge = document.getElementById('badge-trips-count');
+
+  if (citiesBadge) citiesBadge.textContent = state.cities.length;
+  if (fleetBadge) fleetBadge.textContent = state.buses.length;
+  if (routesBadge) routesBadge.textContent = state.routes.length;
+  if (tripsBadge) tripsBadge.textContent = state.trips.length;
 }
 
 // ==========================================
@@ -249,10 +289,12 @@ function populateDropdowns() {
       }).join('');
   }
 
-  // Render Admin Tables
+  // Render Admin Tables & Update Navigation Module Badges
   renderAdminCities();
   renderAdminBuses();
   renderAdminRoutes();
+  renderAdminTrips();
+  updateAdminModuleBadges();
 }
 
 // ==========================================
@@ -788,6 +830,7 @@ function renderAdminCities() {
       </td>
     </tr>
   `).join('');
+  updateAdminModuleBadges();
 }
 
 // --- Bus Types ---
@@ -1027,6 +1070,7 @@ function renderAdminBuses() {
       </tr>
     `;
   }).join('');
+  updateAdminModuleBadges();
 }
 
 // --- Routes ---
@@ -1103,6 +1147,7 @@ function renderAdminRoutes() {
       </tr>
     `;
   }).join('');
+  updateAdminModuleBadges();
 }
 
 // --- Trips Scheduler ---
@@ -1185,4 +1230,5 @@ function renderAdminTrips() {
       </tr>
     `;
   }).join('');
+  updateAdminModuleBadges();
 }

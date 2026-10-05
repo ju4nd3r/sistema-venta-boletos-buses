@@ -26,6 +26,8 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+    volumes:
+      - ./web:/app/web:ro
     environment:
       PORT: "8080"
       DB_HOST: "postgres_db"
